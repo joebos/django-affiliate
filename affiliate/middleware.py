@@ -27,33 +27,45 @@ class AffiliateMiddleware(object):
 
     def process_request(self, request):
         aid = None
-        session = request.session
-        now = datetime.now()
-        if request.method == 'GET':
-            aid = request.GET.get(AFFILIATE_NAME, None)
-            if aid:
-                request.aid = aid
-                if AFFILIATE_SESSION:
-                    session['aid'] = aid
-                    session['aid_dt'] = now.strftime(self.datetime_format)
-                    url = remove_affiliate_code(request.get_full_path())
-                    return HttpResponseRedirect(url)
-        if not aid and AFFILIATE_SESSION:
-            aid = session.get('aid', None)
-            if aid:
-                aid_dt = session.get('aid_dt', None)
-                if aid_dt is None:
-                    l.error('aid_dt not found in session')
-                else:
-                    aid_dt = datetime.strptime(aid_dt, self.datetime_format)
-                    if (now - aid_dt).seconds > AFFILIATE_SESSION_AGE:
-                        # aid expired
-                        aid = None
-                        session.pop('aid')
-                        session.pop('aid_dt')
+
+        if self.is_track_path(request.path):
+            session = request.session
+            now = datetime.now()
+            if request.method == 'GET':
+                aid = request.GET.get(AFFILIATE_NAME, None)
+                if aid:
+                    request.aid = aid
+                    if AFFILIATE_SESSION:
+                        session['aid'] = aid
+                        session['aid_dt'] = now.strftime(self.datetime_format)
+                        url = remove_affiliate_code(request.get_full_path())
+                        return HttpResponseRedirect(url)
+            if not aid and AFFILIATE_SESSION:
+                aid = session.get('aid', None)
+                if aid:
+                    aid_dt = session.get('aid_dt', None)
+                    if aid_dt is None:
+                        l.error('aid_dt not found in session')
+                    else:
+                        aid_dt = datetime.strptime(aid_dt, self.datetime_format)
+                        if (now - aid_dt).seconds > AFFILIATE_SESSION_AGE:
+                            # aid expired
+                            aid = None
+                            session.pop('aid')
+                            session.pop('aid_dt')
+
+            if aid is not None:
+                count = AffiliateModel.objects.filter(aid=int(aid)).count()
+                if count == 0:
+                    aid= None
+
         request.aid = aid
 
     def process_response(self, request, response):
+
+        if request.is_ajax():
+            return response
+
         aid = getattr(request, "aid", None)
         if not aid:
             l.error("aid not set")
